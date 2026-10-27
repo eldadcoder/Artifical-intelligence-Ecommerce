@@ -1,0 +1,64 @@
+name: Daily Gemini task
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # every day at 06:00 UTC = 9:00 AM in Addis Ababa
+  workflow_dispatch:       # lets you run it manually to test
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: daily-gemini
+  cancel-in-progress: false   # never run two at once
+
+jobs:
+  gemini:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then
+            pip install -r backend/requirements.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install django djangorestframework
+          fi
+
+      - name: Run Gemini CLI
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          settings: |-
+            {
+              "maxSessionTurns": 30
+            }
+          prompt: |
+            This is a Django project. The code is in the backend folder.
+
+            1. Use the gh CLI to list open issues labeled "gemini-ready".
+            2. Skip any issue that already has an open pull request linked
+               to it. Pick the oldest remaining issue. If there is none,
+               stop and do nothing.
+            3. Create a new branch named gemini/issue-<number>.
+            4. Implement the change described in the issue.
+            5. Run "python manage.py test" from the backend folder and fix
+               any failures you caused.
+            6. Commit, push the branch, and open a pull request with gh
+               that says "Closes #<number>" in the description.
+
+            Rules: never push to main, never create or commit .env files,
+            and keep changes small and focused on the issue.
